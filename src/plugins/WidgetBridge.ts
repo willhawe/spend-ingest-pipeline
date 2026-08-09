@@ -34,6 +34,10 @@ export interface ScannedPayment {
   amountCents: number;
   paymentDate: string;
   source: string;
+  // The card issuer (e.g. "chase", "amex") parsed from a Google Wallet
+  // notification's text, when the notification listener could tell. Null
+  // for manual entries and for notifications it couldn't attribute.
+  cardSource?: string | null;
   category: string | null;
   deleted: boolean;
   deletedAt: string | null;
@@ -158,6 +162,7 @@ function parsePayments(raw: string | undefined): ScannedPayment[] {
         amountCents: typeof item?.amount_cents === "number" ? item.amount_cents : 0,
         paymentDate: typeof item?.payment_date === "string" ? item.payment_date : "",
         source: typeof item?.source === "string" ? item.source : "notification",
+        cardSource: typeof item?.card_source === "string" ? item.card_source : null,
         category: typeof item?.category === "string" && item.category.trim() ? item.category : null,
         deleted: item?.deleted === true,
         deletedAt: typeof item?.deleted_at === "string" ? item.deleted_at : null,

@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useState, type CSSProperties } from "react";
 import { Settings, ChevronDown, ChevronRight } from "lucide-react";
-import { NotificationScanner } from "./components/NotificationScanner";
 import { parseStatementFile } from "./importPayments";
 import {
   addManualPayment,
@@ -34,6 +33,8 @@ import {
   getUnmatchedStatementRows,
   getOrphanTransactionCandidates,
   linkStatementTransaction,
+  getMonthlyBudgetCents,
+  setMonthlyBudgetCents,
   type SyncStatus,
   type TransactionBreakdown,
   type CategoryRange,
@@ -96,6 +97,9 @@ export default function App() {
     payments: ScannedPayment[];
   } | null>(null);
   const [bulkMessage, setBulkMessage] = useState("");
+  const [monthlyBudgetCents, setMonthlyBudgetCentsState] = useState(0);
+  const [budgetDraft, setBudgetDraft] = useState("");
+  const [budgetMessage, setBudgetMessage] = useState("");
 
   const categoryColorMap = new Map(categories.map((item) => [item.name.toLowerCase(), item.color]));
   const sortedCategories = [...categories].sort((a, b) => (a.name === "Other" ? 1 : b.name === "Other" ? -1 : 0));
@@ -155,6 +159,17 @@ export default function App() {
     void initCategories();
   }, []);
 
+  useEffect(() => {
+    async function initBudget() {
+      if (!isSupabaseConfigured()) return;
+      const cents = await getMonthlyBudgetCents();
+      setMonthlyBudgetCentsState(cents);
+      setBudgetDraft(cents > 0 ? (cents / 100).toString() : "");
+    }
+
+    void initBudget();
+  }, []);
+
   async function syncMonthlyCategoryWidget() {
     const totals = await getMonthlyCategoryTotals();
     const payload = totals.map((item) => {
@@ -207,6 +222,23 @@ export default function App() {
       await refreshSummary();
     } catch (error) {
       setFormMessage(error instanceof Error ? error.message : "Could not add payment.");
+    }
+  }
+
+  async function saveBudget() {
+    const trimmed = budgetDraft.trim();
+    const amountCents = trimmed === "" ? 0 : parseAmountCents(trimmed);
+    if (trimmed !== "" && amountCents <= 0) {
+      setBudgetMessage("Enter a valid amount.");
+      return;
+    }
+
+    const ok = await setMonthlyBudgetCents(amountCents);
+    if (ok) {
+      setMonthlyBudgetCentsState(amountCents);
+      setBudgetMessage("Saved.");
+    } else {
+      setBudgetMessage("Could not save budget.");
     }
   }
 
@@ -622,6 +654,10 @@ export default function App() {
     }
   }
 
+  const budgetPercent =
+    monthlyBudgetCents > 0 ? Math.round((periodTotalCents / monthlyBudgetCents) * 100) : 0;
+  const budgetOverCents = periodTotalCents > monthlyBudgetCents ? periodTotalCents - monthlyBudgetCents : 0;
+
   const maxCategoryAmount = Math.max(0, ...periodTotals.map((item) => item.amountCents));
   const categoryTotals = periodTotals.map((item) => {
     const color = categoryColorMap.get(item.category.toLowerCase()) ?? "#8b9cb3";
@@ -651,7 +687,51 @@ export default function App() {
     <main className="app app--scanner">
       <section className="scanner-total">
         <div className="scanner-total__top">
-          <p className="scanner-total__label">Spent</p>
+          <div className="period-filter">
+            <div className="period-filter__tabs">
+              {(["month", "year"] as const).map((range) => (
+                <button
+                  key={range}
+                  type="button"
+                  className={
+                    periodRange === range
+                      ? "period-filter__tab period-filter__tab--active"
+                      : "period-filter__tab"
+                  }
+                  onClick={() => setPeriodRange(range)}
+                >
+                  {range === "month" ? "Month" : "Year"}
+                </button>
+              ))}
+            </div>
+            {periodRange === "month" && (
+              <input
+                type="month"
+                className="period-filter__input"
+                value={toMonthInputValue(periodDate)}
+                max={toMonthInputValue(new Date())}
+                onChange={(event) => {
+                  const parsed = parseMonthInputValue(event.target.value);
+                  if (!parsed) return;
+                  setPeriodDate(parsed > new Date() ? new Date() : parsed);
+                }}
+              />
+            )}
+            {periodRange === "year" && (
+              <input
+                type="number"
+                className="period-filter__input"
+                value={periodDate.getFullYear()}
+                max={new Date().getFullYear()}
+                onChange={(event) => {
+                  const year = Number(event.target.value);
+                  if (!Number.isFinite(year)) return;
+                  const clampedYear = Math.min(year, new Date().getFullYear());
+                  setPeriodDate((prev) => new Date(clampedYear, prev.getMonth(), 1));
+                }}
+              />
+            )}
+          </div>
           <div className="settings-shell">
             <button
               type="button"
@@ -675,6 +755,21 @@ export default function App() {
                 >
                   Notification scanner settings
                 </button>
+                <div className="settings-menu__section">
+                  <p className="settings-menu__label">Monthly budget</p>
+                  <div className="settings-menu__fields">
+                    <input
+                      value={budgetDraft}
+                      onChange={(event) => setBudgetDraft(event.target.value)}
+                      placeholder="e.g. 1500"
+                      inputMode="decimal"
+                    />
+                    <button type="button" onClick={() => void saveBudget()}>
+                      Save
+                    </button>
+                  </div>
+                  {budgetMessage && <p className="manual-entry__message">{budgetMessage}</p>}
+                </div>
                 <div className="settings-menu__section">
                   <p className="settings-menu__label">Filter by category</p>
                   <select
@@ -803,61 +898,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="period-filter">
-          <div className="period-filter__tabs">
-            {(["day", "month", "year"] as const).map((range) => (
-              <button
-                key={range}
-                type="button"
-                className={
-                  periodRange === range
-                    ? "period-filter__tab period-filter__tab--active"
-                    : "period-filter__tab"
-                }
-                onClick={() => setPeriodRange(range)}
-              >
-                {range === "day" ? "Day" : range === "month" ? "Month" : "Year"}
-              </button>
-            ))}
-          </div>
-          {periodRange === "day" && (
-            <input
-              type="date"
-              className="period-filter__input"
-              value={toDateInputValue(periodDate)}
-              onChange={(event) => {
-                const parsed = parseDateInputValue(event.target.value);
-                if (parsed) setPeriodDate(parsed);
-              }}
-            />
-          )}
-          {periodRange === "month" && (
-            <input
-              type="month"
-              className="period-filter__input"
-              value={toMonthInputValue(periodDate)}
-              onChange={(event) => {
-                const parsed = parseMonthInputValue(event.target.value);
-                if (parsed) setPeriodDate(parsed);
-              }}
-            />
-          )}
-          {periodRange === "year" && (
-            <input
-              type="number"
-              className="period-filter__input"
-              value={periodDate.getFullYear()}
-              onChange={(event) => {
-                const year = Number(event.target.value);
-                if (!Number.isFinite(year)) return;
-                setPeriodDate((prev) => new Date(year, prev.getMonth(), 1));
-              }}
-            />
-          )}
-        </div>
-
         <p className="scanner-total__amount">{formatGbp(periodTotalCents)}</p>
-        <p className="scanner-total__hint">{periodLabel(periodRange, periodDate)}</p>
         <p className={`sync-status sync-status--${syncStatus}`}>
           {syncStatus === "synced"
             ? "Synced to Supabase"
@@ -866,6 +907,36 @@ export default function App() {
               : "Supabase not configured in this build"}
         </p>
       </section>
+
+      {periodRange === "month" && monthlyBudgetCents > 0 && (
+        <section className="budget-chart">
+          <div className="budget-chart__meta">
+            <span>Monthly budget</span>
+            <strong>
+              {formatGbp(periodTotalCents)}
+              <span className="budget-chart__of"> of {formatGbp(monthlyBudgetCents)}</span>
+            </strong>
+          </div>
+          <div className={`budget-chart__track${budgetPercent >= 100 ? " budget-chart__track--over" : ""}`} aria-hidden="true">
+            <div
+              className="budget-chart__bar"
+              style={{ width: `${Math.min(100, Math.max(0, budgetPercent))}%` }}
+            >
+              {categoryTotals.map((item) => (
+                <div
+                  key={item.category}
+                  className="budget-chart__segment"
+                  style={{ flexGrow: item.amountCents, flexBasis: 0, background: item.color }}
+                  title={`${item.category}: ${formatGbp(item.amountCents)}`}
+                />
+              ))}
+            </div>
+          </div>
+          {budgetOverCents > 0 && (
+            <p className="budget-chart__over">{formatGbp(budgetOverCents)} over budget</p>
+          )}
+        </section>
+      )}
 
       <section className="category-chart">
         <div className="category-chart__header">
@@ -914,8 +985,6 @@ export default function App() {
         )}
       </section>
 
-      <NotificationScanner />
-
       <section className="last-alert">
         <div className="last-alert__header">
           <p className="last-alert__label">Payments</p>
@@ -940,8 +1009,7 @@ export default function App() {
             {(() => {
               return filteredPayments.map((payment, index) => {
               const showDateDivider =
-                periodRange !== "day" &&
-                (index === 0 || filteredPayments[index - 1]?.paymentDate !== payment.paymentDate);
+                index === 0 || filteredPayments[index - 1]?.paymentDate !== payment.paymentDate;
               const menuOpen = openPaymentMenuId === payment.id;
               const category = payment.category ?? inferCategory(payment.merchant);
               const selectedCategoryDef = categories.find((item) => item.name === category);
@@ -981,6 +1049,9 @@ export default function App() {
                         </span>
                         {payment.subcategory && (
                           <span className="payment-subcategory">{payment.subcategory}</span>
+                        )}
+                        {payment.cardSource && (
+                          <span className="payment-subcategory">{cardSourceLabel(payment.cardSource)}</span>
                         )}
                       </div>
                       {orphanedIds.has(payment.id) && (
@@ -1438,29 +1509,22 @@ function parseAmountCents(value: string): number {
   return Number(pounds) * 100 + Number(pence.padEnd(2, "0"));
 }
 
-function toDateInputValue(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function toMonthInputValue(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
 }
 
-function parseDateInputValue(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-}
-
 function parseMonthInputValue(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   if (!match) return null;
   return new Date(Number(match[1]), Number(match[2]) - 1, 1);
+}
+
+function cardSourceLabel(cardSource: string): string {
+  if (cardSource === "chase") return "Chase";
+  if (cardSource === "amex") return "Amex";
+  return cardSource;
 }
 
 function dateDividerLabel(dateStr: string, range: CategoryRange): string {
@@ -1474,16 +1538,6 @@ function dateDividerLabel(dateStr: string, range: CategoryRange): string {
     day: "numeric",
     ...(range === "year" ? { month: "short" } : {}),
   });
-}
-
-function periodLabel(range: CategoryRange, date: Date): string {
-  if (range === "day") {
-    return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  }
-  if (range === "year") {
-    return String(date.getFullYear());
-  }
-  return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 }
 
 function formatGbp(cents: number): string {

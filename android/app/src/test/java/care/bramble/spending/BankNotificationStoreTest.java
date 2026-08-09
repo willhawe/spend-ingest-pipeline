@@ -40,4 +40,22 @@ public class BankNotificationStoreTest {
                 "Amex",
                 "American Express You spent £12.05 at LNER"));
     }
+
+    @Test
+    public void detectsChaseCardSource() {
+        assertEquals("chase", BankNotificationStore.detectCardSourceForTest(
+                "Wallet The Whiskey Jar £12.90 with Chase Debit Mastercard ••7614"));
+    }
+
+    @Test
+    public void detectsAmexCardSource() {
+        assertEquals("amex", BankNotificationStore.detectCardSourceForTest(
+                "£12.05 with The American Express® Rewards Credit Card ••2002"));
+    }
+
+    @Test
+    public void detectsNoCardSourceForUnrecognisedCard() {
+        assertEquals(null, BankNotificationStore.detectCardSourceForTest(
+                "£12.90 with Monzo Debit Mastercard ••1234"));
+    }
 }

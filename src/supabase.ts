@@ -48,6 +48,7 @@ export async function syncPayments(payments: ScannedPayment[]): Promise<SyncStat
     amount_display: payment.amount,
     payment_date: payment.paymentDate,
     source: payment.source,
+    card_source: payment.cardSource,
     category: payment.category,
     deleted: payment.deleted,
     deleted_at: payment.deletedAt,
@@ -72,15 +73,9 @@ export interface CategoryTotal {
   subcategories: SubcategoryTotal[];
 }
 
-export type CategoryRange = "day" | "month" | "year";
+export type CategoryRange = "month" | "year";
 
 export function periodBounds(range: CategoryRange, ref: Date): { start: Date; end: Date } {
-  if (range === "day") {
-    const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    return { start, end };
-  }
   if (range === "year") {
     const start = new Date(ref.getFullYear(), 0, 1);
     const end = new Date(ref.getFullYear() + 1, 0, 1);
@@ -98,6 +93,20 @@ export interface PeriodPaymentsResult {
   orphanedIds: string[];
 }
 
+// periodBounds() returns local calendar-day boundaries (e.g. 1 Aug 00:00
+// local). Formatting those via toISOString() would convert to UTC first, so
+// in any UTC+ timezone (e.g. British Summer Time) local midnight rolls back
+// to the previous day's date — an August query would start from "2026-07-31"
+// instead of "2026-08-01", pulling the last day of July into the August
+// list. payment_date is a plain calendar date with no timezone of its own,
+// so format using local Y/M/D components instead of going through UTC.
+function toLocalDateStr(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export async function getPaymentsForPeriod(
   range: CategoryRange,
   referenceDate: Date,
@@ -105,19 +114,18 @@ export async function getPaymentsForPeriod(
   if (!supabase) return { payments: [], totals: [], totalCents: 0, orphanedIds: [] };
 
   const { start, end } = periodBounds(range, referenceDate);
-  const startStr = start.toISOString().slice(0, 10);
-  const endStr = end.toISOString().slice(0, 10);
+  const startStr = toLocalDateStr(start);
+  const endStr = toLocalDateStr(end);
 
   const [transactionsResult, statementResult] = await Promise.all([
     supabase
       .from("transactions")
       .select(
-        "id, merchant, amount_display, amount_cents, payment_date, source, category, subcategory, deleted, deleted_at, photo_url",
+        "id, merchant, amount_display, amount_cents, payment_date, source, card_source, category, subcategory, deleted, deleted_at, photo_url",
       )
       .eq("deleted", false)
       .gte("payment_date", startStr)
       .lt("payment_date", endStr)
-      .order("payment_date", { ascending: false })
       .order("created_at", { ascending: false }),
     supabase
       .from("statement_transactions")
@@ -136,6 +144,7 @@ export async function getPaymentsForPeriod(
     amountCents: row.amount_cents ?? 0,
     paymentDate: row.payment_date ?? "",
     source: row.source ?? "notification",
+    cardSource: typeof row.card_source === "string" && row.card_source.trim() ? row.card_source : null,
     category: typeof row.category === "string" && row.category.trim() ? row.category : null,
     subcategory: typeof row.subcategory === "string" && row.subcategory.trim() ? row.subcategory : null,
     deleted: row.deleted === true,
@@ -211,14 +220,6 @@ export interface ImportStatementResult {
   unmatched: number;
 }
 
-const MATCH_WINDOW_DAYS = 5;
-
-function addDays(dateStr: string, days: number): string {
-  const date = new Date(`${dateStr}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 function daysBetween(a: string, b: string): number {
   const diffMs = new Date(`${a}T00:00:00Z`).getTime() - new Date(`${b}T00:00:00Z`).getTime();
   return Math.abs(Math.round(diffMs / 86_400_000));
@@ -232,30 +233,21 @@ async function findMatchCandidate(
 
   const { data, error } = await supabase
     .from("transactions")
-    .select("id, payment_date")
+    .select("id")
     .eq("deleted", false)
     .eq("amount_cents", row.amountCents)
-    .gte("payment_date", addDays(row.paymentDate, -MATCH_WINDOW_DAYS))
-    .lte("payment_date", addDays(row.paymentDate, MATCH_WINDOW_DAYS));
+    .eq("payment_date", row.paymentDate);
 
   if (error || !data) return null;
 
+  // Auto-link only when there's exactly one same-day, same-amount
+  // transaction. Zero means no counterpart was captured (e.g. no
+  // notification fired for it); more than one is ambiguous — which of two
+  // same-day, same-amount transactions this statement row corresponds to
+  // can't be told apart, so leave both for manual linking instead of
+  // guessing wrong.
   const candidates = data.filter((candidate) => !alreadyLinkedIds.has(candidate.id));
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0]?.id ?? null;
-
-  const sorted = [...candidates].sort(
-    (a, b) => daysBetween(a.payment_date, row.paymentDate) - daysBetween(b.payment_date, row.paymentDate),
-  );
-  const [best, second] = sorted;
-  if (!best || !second) return best?.id ?? null;
-
-  // Ambiguous (two equally-close candidates with the same amount) — leave
-  // unmatched so the user picks the right one instead of guessing.
-  if (daysBetween(best.payment_date, row.paymentDate) < daysBetween(second.payment_date, row.paymentDate)) {
-    return best.id;
-  }
-  return null;
+  return candidates.length === 1 ? (candidates[0]?.id ?? null) : null;
 }
 
 export async function importStatementTransactions(
@@ -579,6 +571,24 @@ export async function addReceiptItem(
 export async function removeReceiptItem(itemId: number): Promise<boolean> {
   if (!supabase) return false;
   const { error } = await supabase.from("transaction_items").delete().eq("id", itemId);
+  return !error;
+}
+
+// Recurring monthly budget, stored as a single row (see the `budget`
+// migration) — one number that applies to every month until the user
+// changes it, not a per-month history.
+export async function getMonthlyBudgetCents(): Promise<number> {
+  if (!supabase) return 0;
+  const { data, error } = await supabase.from("budget").select("monthly_budget_cents").eq("id", true).maybeSingle();
+  if (error || !data) return 0;
+  return typeof data.monthly_budget_cents === "number" ? data.monthly_budget_cents : 0;
+}
+
+export async function setMonthlyBudgetCents(amountCents: number): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from("budget")
+    .upsert({ id: true, monthly_budget_cents: amountCents, updated_at: new Date().toISOString() }, { onConflict: "id" });
   return !error;
 }
 

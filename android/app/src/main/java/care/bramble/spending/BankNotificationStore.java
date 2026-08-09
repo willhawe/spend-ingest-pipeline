@@ -55,6 +55,7 @@ public final class BankNotificationStore {
         Integer amountCents = parseAmountCents(combined);
         if (amountCents == null || amountCents <= 0) return;
         String merchant = parseMerchant(title, combined);
+        String cardSource = detectCardSource(combined);
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String today = todayKey();
@@ -88,7 +89,8 @@ public final class BankNotificationStore {
                         amountCents,
                         today,
                         paymentKey,
-                        "notification"))
+                        "notification",
+                        cardSource))
                 .apply();
 
         SpentTodayWidget.updateAll(context);
@@ -171,7 +173,8 @@ public final class BankNotificationStore {
                         amountCents,
                         today,
                         id,
-                        "manual"))
+                        "manual",
+                        null))
                 .apply();
 
         SpentTodayWidget.updateAll(context);
@@ -257,6 +260,21 @@ public final class BankNotificationStore {
 
     static boolean looksLikeBankNotificationForTest(String packageName, String appLabel, String combined) {
         return looksLikeBankNotification(packageName, appLabel, combined);
+    }
+
+    // Google Wallet notification text names the card issuer directly, e.g.
+    // "£12.90 with Chase Debit Mastercard ••7614" or "£12.05 with The
+    // American Express® Rewards Credit Card ••2002" — pull that out so
+    // transactions can be attributed to a card, not just tagged "notification".
+    private static String detectCardSource(String combined) {
+        String lower = combined.toLowerCase(Locale.UK);
+        if (lower.contains("chase")) return "chase";
+        if (lower.contains("american express") || lower.contains("amex")) return "amex";
+        return null;
+    }
+
+    static String detectCardSourceForTest(String combined) {
+        return detectCardSource(combined);
     }
 
     private static boolean looksLikeSpend(String combined) {
@@ -347,7 +365,8 @@ public final class BankNotificationStore {
             int amountCents,
             String paymentDate,
             String id,
-            String source
+            String source,
+            String cardSource
     ) {
         try {
             JSONArray payments = new JSONArray(rawPayments == null ? "[]" : rawPayments);
@@ -358,6 +377,7 @@ public final class BankNotificationStore {
                     .put("amount_cents", amountCents)
                     .put("payment_date", paymentDate)
                     .put("source", source)
+                    .put("card_source", cardSource == null ? JSONObject.NULL : cardSource)
                     .put("category", JSONObject.NULL)
                     .put("deleted", false);
             JSONArray next = new JSONArray();
