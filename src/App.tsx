@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type CSSProperties } from "react";
-import { Settings, ChevronDown, ChevronRight } from "lucide-react";
+import { Settings, ChevronDown, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 import { parseStatementFile } from "./importPayments";
 import {
   addManualPayment,
@@ -18,6 +18,7 @@ import {
   getTransactionBreakdown,
   getMonthlyCategoryTotals,
   getPaymentsForPeriod,
+  getPeriodTotalCents,
   updatePaymentCategory,
   updatePaymentSubcategory,
   getOtherPaymentsFromMerchant,
@@ -86,6 +87,7 @@ export default function App() {
   const [periodPayments, setPeriodPayments] = useState<ScannedPayment[]>([]);
   const [periodTotals, setPeriodTotals] = useState<CategoryTotal[]>([]);
   const [periodTotalCents, setPeriodTotalCents] = useState(0);
+  const [previousPeriodTotalCents, setPreviousPeriodTotalCents] = useState<number | null>(null);
   const [orphanedIds, setOrphanedIds] = useState<Set<string>>(new Set());
   const [unmatchedStatementRows, setUnmatchedStatementRows] = useState<StatementTransaction[]>([]);
   const [linkingStatementId, setLinkingStatementId] = useState<string | null>(null);
@@ -194,6 +196,7 @@ export default function App() {
     setPeriodTotals(result.totals);
     setPeriodTotalCents(result.totalCents);
     setOrphanedIds(new Set(result.orphanedIds));
+    setPreviousPeriodTotalCents(await getPeriodTotalCents(periodRange, previousPeriodDate(periodRange, periodDate)));
   }
 
   async function loadUnmatchedStatementRows() {
@@ -657,6 +660,21 @@ export default function App() {
   const budgetPercent =
     monthlyBudgetCents > 0 ? Math.round((periodTotalCents / monthlyBudgetCents) * 100) : 0;
   const budgetOverCents = periodTotalCents > monthlyBudgetCents ? periodTotalCents - monthlyBudgetCents : 0;
+  const now = new Date();
+  const isCurrentPeriod =
+    periodRange === "month"
+      ? periodDate.getFullYear() === now.getFullYear() && periodDate.getMonth() === now.getMonth()
+      : periodDate.getFullYear() === now.getFullYear();
+  const daysLeftInMonth = Math.max(
+    0,
+    Math.ceil((new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - now.getTime()) / 86_400_000),
+  );
+  const budgetRemainingCents = monthlyBudgetCents - periodTotalCents;
+
+  const trendPercent =
+    previousPeriodTotalCents !== null && previousPeriodTotalCents > 0
+      ? Math.round(((periodTotalCents - previousPeriodTotalCents) / previousPeriodTotalCents) * 100)
+      : null;
 
   const maxCategoryAmount = Math.max(0, ...periodTotals.map((item) => item.amountCents));
   const categoryTotals = periodTotals.map((item) => {
@@ -899,6 +917,15 @@ export default function App() {
         </div>
 
         <p className="scanner-total__amount">{formatGbp(periodTotalCents)}</p>
+        <div className="scanner-total__stats">
+          {trendPercent !== null && (
+            <span className={`trend-badge${trendPercent > 0 ? " trend-badge--up" : " trend-badge--down"}`}>
+              {trendPercent > 0 ? <TrendingUp size={13} aria-hidden="true" /> : <TrendingDown size={13} aria-hidden="true" />}
+              {Math.abs(trendPercent)}% vs {previousPeriodLabel(periodRange, periodDate)}
+            </span>
+          )}
+          <span className="scanner-total__count">{periodPayments.length} payments</span>
+        </div>
         <p className={`sync-status sync-status--${syncStatus}`}>
           {syncStatus === "synced"
             ? "Synced to Supabase"
@@ -932,22 +959,28 @@ export default function App() {
               ))}
             </div>
           </div>
-          {budgetOverCents > 0 && (
+          {budgetOverCents > 0 ? (
             <p className="budget-chart__over">{formatGbp(budgetOverCents)} over budget</p>
+          ) : (
+            <p className="budget-chart__remaining">
+              {formatGbp(budgetRemainingCents)} left
+              {isCurrentPeriod ? ` with ${daysLeftInMonth} days to go` : ""}
+            </p>
           )}
         </section>
       )}
 
       <section className="category-chart">
         <div className="category-chart__header">
-          <span>{periodPayments.length} payments</span>
+          <span>Categories</span>
         </div>
         {categoryTotals.length > 0 ? (
           <ul className="category-chart__list">
             {categoryTotals.map((item) => (
               <li key={item.category} className="category-chart__row">
                 <div className="category-chart__meta">
-                  <span>
+                  <span className="category-chart__name">
+                    <span className="category-chart__dot" style={{ background: item.color }} aria-hidden="true" />
                     {item.category}
                     {item.subcategories.length > 0 && (
                       <span className="category-chart__subcategories">
@@ -1519,6 +1552,16 @@ function parseMonthInputValue(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   if (!match) return null;
   return new Date(Number(match[1]), Number(match[2]) - 1, 1);
+}
+
+function previousPeriodDate(range: CategoryRange, date: Date): Date {
+  if (range === "year") return new Date(date.getFullYear() - 1, date.getMonth(), 1);
+  return new Date(date.getFullYear(), date.getMonth() - 1, 1);
+}
+
+function previousPeriodLabel(range: CategoryRange, date: Date): string {
+  const previous = previousPeriodDate(range, date);
+  return range === "year" ? String(previous.getFullYear()) : previous.toLocaleDateString("en-GB", { month: "long" });
 }
 
 function cardSourceLabel(cardSource: string): string {

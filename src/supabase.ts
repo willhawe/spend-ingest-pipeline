@@ -194,6 +194,24 @@ export async function getPaymentsForPeriod(
   };
 }
 
+// Lighter-weight than getPaymentsForPeriod — used only for the "vs last
+// month/year" comparison badge, which needs just a sum, not the full row
+// set, breakdowns, and statement-matching for that prior period.
+export async function getPeriodTotalCents(range: CategoryRange, referenceDate: Date): Promise<number> {
+  if (!supabase) return 0;
+
+  const { start, end } = periodBounds(range, referenceDate);
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("amount_cents")
+    .eq("deleted", false)
+    .gte("payment_date", toLocalDateStr(start))
+    .lt("payment_date", toLocalDateStr(end));
+
+  if (error || !data) return 0;
+  return data.reduce((total, row) => total + (row.amount_cents ?? 0), 0);
+}
+
 function formatGbpCents(cents: number): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(cents / 100);
 }
