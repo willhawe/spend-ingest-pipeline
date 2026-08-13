@@ -23,6 +23,8 @@ export interface WidgetBridgePlugin {
   addManualPayment(options: { merchant: string; amountCents: number }): Promise<void>;
   deletePayment(options: { id: string }): Promise<void>;
   setPaymentCategory(options: { id: string; category: string }): Promise<void>;
+  markSynced(options: { ids: string[] }): Promise<void>;
+  getDiagnostics(): Promise<NativeDiagnostics>;
 }
 
 const WidgetBridge = registerPlugin<WidgetBridgePlugin>("WidgetBridge");
@@ -62,6 +64,26 @@ interface NativeNotificationSummary {
   lastMerchant: string;
   lastAmount: string;
   paymentsJson?: string;
+}
+
+export interface NotificationOutcome {
+  at: string;
+  package: string;
+  outcome: string;
+  detail: string | null;
+}
+
+export interface NativeDiagnostics {
+  notificationAccessEnabled: boolean;
+  listenerConnected: boolean;
+  listenerConnectedAt: string | null;
+  listenerDisconnectedAt: string | null;
+  lastNotificationAt: string | null;
+  lastAcceptedMerchant?: string;
+  lastAcceptedAmount?: string;
+  lastAcceptedAt?: string;
+  pendingUploadCount: number;
+  diagnostics: NotificationOutcome[];
 }
 
 export async function syncWidgetTotal(amount: string): Promise<void> {
@@ -147,6 +169,29 @@ export async function setPaymentCategory(id: string, category: string): Promise<
     throw new Error("Native payment store is not available");
   }
   await WidgetBridge.setPaymentCategory({ id, category });
+}
+
+// Tells the native pending-queue these rows are safely in Supabase, so they
+// become eligible for eventual cleanup instead of being kept indefinitely.
+// Best-effort: if this never gets called (app closed mid-sync, web build,
+// etc.) the rows just stay pending and get re-uploaded next time — no data
+// loss, only a redundant upsert.
+export async function markPaymentsSynced(ids: string[]): Promise<void> {
+  if (!canUseNotificationAccess() || ids.length === 0) return;
+  try {
+    await WidgetBridge.markSynced({ ids });
+  } catch {
+    // best-effort
+  }
+}
+
+export async function getNativeDiagnostics(): Promise<NativeDiagnostics | null> {
+  if (!canUseNotificationAccess()) return null;
+  try {
+    return await WidgetBridge.getDiagnostics();
+  } catch {
+    return null;
+  }
 }
 
 function parsePayments(raw: string | undefined): ScannedPayment[] {

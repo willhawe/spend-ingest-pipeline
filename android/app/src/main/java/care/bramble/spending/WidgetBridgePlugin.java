@@ -17,6 +17,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @CapacitorPlugin(name = "WidgetBridge")
 public class WidgetBridgePlugin extends Plugin {
 
@@ -160,5 +163,35 @@ public class WidgetBridgePlugin extends Plugin {
 
         BankNotificationStore.setCategory(getContext(), id, category);
         call.resolve();
+    }
+
+    @PluginMethod
+    public void markSynced(PluginCall call) {
+        JSArray idsArray = call.getArray("ids");
+        if (idsArray == null) {
+            call.reject("ids is required");
+            return;
+        }
+
+        try {
+            List<String> ids = new ArrayList<>();
+            for (int i = 0; i < idsArray.length(); i += 1) {
+                ids.add(idsArray.getString(i));
+            }
+            BankNotificationStore.markSynced(getContext(), ids);
+            call.resolve();
+        } catch (JSONException e) {
+            call.reject("Invalid ids payload");
+        }
+    }
+
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        try {
+            JSONObject diagnostics = new JSONObject(BankNotificationStore.getDiagnostics(getContext()));
+            call.resolve(com.getcapacitor.JSObject.fromJSONObject(diagnostics));
+        } catch (JSONException e) {
+            call.reject("Could not read diagnostics");
+        }
     }
 }

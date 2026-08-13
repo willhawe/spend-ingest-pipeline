@@ -5,10 +5,12 @@ import {
   addManualPayment,
   canUseNotificationAccess,
   deletePayment,
+  getNativeDiagnostics,
   getNotificationSummary,
   openNotificationAccessSettings,
   setPaymentCategory,
   syncCategoryBreakdown,
+  type NativeDiagnostics,
   type ScannedPayment,
 } from "./plugins/WidgetBridge";
 import {
@@ -102,6 +104,8 @@ export default function App() {
   const [monthlyBudgetCents, setMonthlyBudgetCentsState] = useState(0);
   const [budgetDraft, setBudgetDraft] = useState("");
   const [budgetMessage, setBudgetMessage] = useState("");
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<NativeDiagnostics | null>(null);
 
   const categoryColorMap = new Map(categories.map((item) => [item.name.toLowerCase(), item.color]));
   const sortedCategories = [...categories].sort((a, b) => (a.name === "Other" ? 1 : b.name === "Other" ? -1 : 0));
@@ -303,6 +307,12 @@ export default function App() {
     } catch (error) {
       setImportMessage(error instanceof Error ? error.message : "Could not open Android settings.");
     }
+  }
+
+  async function openDiagnostics() {
+    setSettingsOpen(false);
+    setDiagnosticsOpen(true);
+    setDiagnostics(await getNativeDiagnostics());
   }
 
   async function removePayment(id: string) {
@@ -772,6 +782,13 @@ export default function App() {
                   onClick={() => void openScannerSettings()}
                 >
                   Notification scanner settings
+                </button>
+                <button
+                  type="button"
+                  className="settings-menu__item"
+                  onClick={() => void openDiagnostics()}
+                >
+                  Diagnostics
                 </button>
                 <div className="settings-menu__section">
                   <p className="settings-menu__label">Monthly budget</p>
@@ -1518,6 +1535,93 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {diagnosticsOpen && (
+        <div className="payment-menu-overlay">
+          <div className="payment-menu-backdrop" onClick={() => setDiagnosticsOpen(false)} />
+          <div className="payment-menu" role="dialog" aria-modal="true" aria-label="Diagnostics">
+            <button
+              type="button"
+              className="payment-menu__handle"
+              aria-label="Close"
+              onClick={() => setDiagnosticsOpen(false)}
+            />
+            <div className="payment-menu__sheet-header">
+              <div className="payment-menu__sheet-title">
+                <span>Diagnostics</span>
+              </div>
+              <button
+                type="button"
+                className="payment-menu__close"
+                aria-label="Close menu"
+                onClick={() => setDiagnosticsOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="payment-menu__body">
+              {diagnostics ? (
+                <>
+                  <ul className="diagnostics-list">
+                    <li>
+                      <span>Notification access</span>
+                      <strong>{diagnostics.notificationAccessEnabled ? "Enabled" : "Disabled"}</strong>
+                    </li>
+                    <li>
+                      <span>Listener</span>
+                      <strong>{diagnostics.listenerConnected ? "Connected" : "Disconnected"}</strong>
+                    </li>
+                    <li>
+                      <span>Last notification</span>
+                      <strong>{formatDiagnosticTime(diagnostics.lastNotificationAt)}</strong>
+                    </li>
+                    <li>
+                      <span>Last accepted payment</span>
+                      <strong>
+                        {diagnostics.lastAcceptedMerchant
+                          ? `${diagnostics.lastAcceptedMerchant} ${diagnostics.lastAcceptedAmount ?? ""}`.trim()
+                          : "None yet"}
+                      </strong>
+                    </li>
+                    <li>
+                      <span>Pending upload</span>
+                      <strong>{diagnostics.pendingUploadCount}</strong>
+                    </li>
+                    <li>
+                      <span>Last Supabase sync</span>
+                      <strong>
+                        {syncStatus === "synced" ? "Successful" : syncStatus === "error" ? "Failed" : "Not configured"}
+                      </strong>
+                    </li>
+                  </ul>
+                  <p className="settings-menu__label" style={{ marginTop: "1rem" }}>
+                    Recent notification activity
+                  </p>
+                  {diagnostics.diagnostics.length > 0 ? (
+                    <ul className="diagnostics-log">
+                      {diagnostics.diagnostics.map((entry, index) => (
+                        <li key={`${entry.at}-${index}`}>
+                          <span className="diagnostics-log__outcome">{outcomeLabel(entry.outcome)}</span>
+                          <span className="diagnostics-log__meta">
+                            {formatDiagnosticTime(entry.at)}
+                            {entry.detail ? ` · ${entry.detail}` : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="last-alert__empty">No notification activity recorded yet.</p>
+                  )}
+                </>
+              ) : (
+                <p className="last-alert__empty">
+                  {canUseNotificationAccess() ? "Loading…" : "Diagnostics are only available in the Android app."}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -1568,6 +1672,28 @@ function cardSourceLabel(cardSource: string): string {
   if (cardSource === "chase") return "Chase";
   if (cardSource === "amex") return "Amex";
   return cardSource;
+}
+
+function formatDiagnosticTime(iso: string | null | undefined): string {
+  if (!iso) return "Never";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Never";
+  return date.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+const OUTCOME_LABELS: Record<string, string> = {
+  accepted: "Accepted",
+  wrong_app: "Wrong app",
+  no_content: "No content",
+  no_amount: "No £ amount",
+  refund_or_declined: "Refund or declined",
+  not_recognised_as_spend: "Not recognised as spend",
+  unparseable_amount: "Couldn't parse amount",
+  duplicate: "Duplicate",
+};
+
+function outcomeLabel(outcome: string): string {
+  return OUTCOME_LABELS[outcome] ?? outcome;
 }
 
 function dateDividerLabel(dateStr: string, range: CategoryRange): string {

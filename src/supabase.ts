@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { ScannedPayment } from "./plugins/WidgetBridge";
+import { markPaymentsSynced, type ScannedPayment } from "./plugins/WidgetBridge";
 import { inferCategory } from "./categories";
 import { formatGbp, slug, type ParsedRow, type StatementSource } from "./importPayments";
 
@@ -58,6 +58,10 @@ export async function syncPayments(payments: ScannedPayment[]): Promise<SyncStat
   const { error } = await supabase
     .from("transactions")
     .upsert(rows, { onConflict: "id" });
+
+  if (!error) {
+    await markPaymentsSynced(payments.map((payment) => payment.id));
+  }
 
   return error ? "error" : "synced";
 }

@@ -1,5 +1,20 @@
 apply plugin: 'com.android.application'
 
+// Release signing comes entirely from the environment (GitHub Actions secrets
+// in CI; unset for local builds) so the keystore itself never needs to touch
+// this repo. Without these set, `assembleRelease` still works locally -- it
+// just produces an unsigned APK, since local builds aren't what gets
+// distributed.
+def releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+def releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+def releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+def releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+def hasReleaseSigningConfig = releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword
+
+// CI passes the GitHub Actions run number here so every build's versionCode
+// strictly increases; local builds fall back to 1.
+def releaseVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+
 android {
     namespace = "care.bramble.spending"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,7 +22,7 @@ android {
         applicationId "care.bramble.spending"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        versionCode releaseVersionCode
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -16,10 +31,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigningConfig) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
@@ -35,8 +63,12 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.room:room-runtime:$roomVersion"
+    annotationProcessor "androidx.room:room-compiler:$roomVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.robolectric:robolectric:4.13"
+    testImplementation "androidx.test:core:1.6.1"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

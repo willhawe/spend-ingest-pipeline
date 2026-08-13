@@ -58,4 +58,34 @@ public class BankNotificationStoreTest {
         assertEquals(null, BankNotificationStore.detectCardSourceForTest(
                 "£12.90 with Monzo Debit Mastercard ••1234"));
     }
+
+    @Test
+    public void classifiesGenuineSpendAsAccepted() {
+        assertEquals(null, BankNotificationStore.classifySpendForTest(
+                "Wallet The Whiskey Jar £12.90 with Chase Debit Mastercard ••7614"));
+    }
+
+    @Test
+    public void classifiesMissingAmountSymbol() {
+        assertEquals(NotificationHealthStore.OUTCOME_NO_AMOUNT, BankNotificationStore.classifySpendForTest(
+                "Wallet The Whiskey Jar with Chase Debit Mastercard ••7614"));
+    }
+
+    @Test
+    public void classifiesRefundAsRejected() {
+        assertEquals(NotificationHealthStore.OUTCOME_REFUND_OR_DECLINED, BankNotificationStore.classifySpendForTest(
+                "£12.90 refunded to your Chase Debit Mastercard ••7614"));
+    }
+
+    @Test
+    public void classifiesDeclinedAsRejected() {
+        assertEquals(NotificationHealthStore.OUTCOME_REFUND_OR_DECLINED, BankNotificationStore.classifySpendForTest(
+                "£12.90 payment declined on your Chase Debit Mastercard ••7614"));
+    }
+
+    @Test
+    public void classifiesUnrecognisedTextWithAmount() {
+        assertEquals(NotificationHealthStore.OUTCOME_NOT_RECOGNISED, BankNotificationStore.classifySpendForTest(
+                "Your balance is now £12.90"));
+    }
 }
