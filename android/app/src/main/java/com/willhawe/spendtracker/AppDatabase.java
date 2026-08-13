@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.content.Context;
 
@@ -19,7 +19,7 @@ public abstract class AppDatabase extends RoomDatabase {
                     instance = Room.databaseBuilder(
                                     context.getApplicationContext(),
                                     AppDatabase.class,
-                                    "bramble-spending.db"
+                                    "spend-tracker.db"
                             )
                             // This is called from a background notification-listener
                             // callback and from quick Capacitor plugin methods, never

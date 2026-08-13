@@ -1,11 +1,10 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.provider.Settings;
 
 import com.getcapacitor.JSArray;
@@ -22,20 +21,6 @@ import java.util.List;
 
 @CapacitorPlugin(name = "WidgetBridge")
 public class WidgetBridgePlugin extends Plugin {
-
-    @PluginMethod
-    public void setSpentToday(PluginCall call) {
-        String amount = call.getString("amount", "£0.00");
-        Context ctx = getContext();
-        if (BankNotificationStore.isNotificationAccessEnabled(ctx)) {
-            call.resolve();
-            return;
-        }
-        SharedPreferences prefs = ctx.getSharedPreferences("SpendingWidget", Context.MODE_PRIVATE);
-        prefs.edit().putString("spent_today", amount).apply();
-        SpentTodayWidget.updateAll(ctx);
-        call.resolve();
-    }
 
     @PluginMethod
     public void openNotificationAccessSettings(PluginCall call) {

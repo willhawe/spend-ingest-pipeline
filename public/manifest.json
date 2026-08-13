@@ -1,6 +1,6 @@
 {
-  "name": "Spending Tracker",
-  "short_name": "Spending",
+  "name": "Spend Tracker",
+  "short_name": "Spend Tracker",
   "description": "Track daily spending across Amex and Chase",
   "start_url": "/",
   "display": "standalone",

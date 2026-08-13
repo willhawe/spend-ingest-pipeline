@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import androidx.annotation.Nullable;
 import androidx.room.Dao;
@@ -16,6 +16,15 @@ public interface PaymentDao {
 
     @Query("SELECT * FROM payments ORDER BY created_at DESC")
     List<PaymentEntity> getAll();
+
+    // What the JS layer actually needs to sync: rows Supabase hasn't
+    // confirmed yet. Deleted-but-unsynced rows are included deliberately --
+    // the deletion itself still needs to reach Supabase. Using getAll() here
+    // instead would mean re-uploading (and re-marking-synced) every row on
+    // every poll, which both wastes writes and, worse, keeps resetting
+    // synced_at to "now" so purgeSyncedBefore() never finds anything to purge.
+    @Query("SELECT * FROM payments WHERE synced_at IS NULL ORDER BY created_at DESC")
+    List<PaymentEntity> getPending();
 
     // Logical-duplicate guard: the same merchant/amount/day within a short
     // window of "just now" is almost certainly a re-posted or updated
@@ -53,4 +62,7 @@ public interface PaymentDao {
     // "did this actually sync" question without the table growing forever.
     @Query("DELETE FROM payments WHERE synced_at IS NOT NULL AND synced_at < :beforeMillis")
     void purgeSyncedBefore(long beforeMillis);
+
+    @Query("DELETE FROM payments WHERE payment_date = :date")
+    void deleteForDate(String date);
 }

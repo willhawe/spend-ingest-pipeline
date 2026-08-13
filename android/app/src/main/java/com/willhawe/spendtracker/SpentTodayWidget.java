@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.widget.RemoteViews;
 
 public class SpentTodayWidget extends AppWidgetProvider {
@@ -27,8 +26,7 @@ public class SpentTodayWidget extends AppWidgetProvider {
     }
 
     public static void updateWidget(Context context, AppWidgetManager manager, int widgetId) {
-        SharedPreferences prefs = context.getSharedPreferences("SpendingWidget", Context.MODE_PRIVATE);
-        String amount = prefs.getString("spent_today", "£0.00");
+        String amount = BankNotificationStore.getSpentToday(context);
 
         Intent intent = new Intent(context, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(

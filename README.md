@@ -94,12 +94,13 @@ src/
 ├── categoriesApi.ts    # Category/sub-category CRUD against Supabase
 ├── categories.ts       # Category inference + chart bar-segment helpers
 ├── supabase.ts          # Supabase client + all transaction/statement queries
-├── components/          # Notification scanner control
 └── plugins/              # Capacitor bridge to native Android scanner/widget state
 
-android/app/src/main/java/care/bramble/spending/
-├── BankNotificationListener.java  # NotificationListenerService: parses payment alerts
-├── BankNotificationStore.java     # SharedPreferences-backed daily payment cache
+android/app/src/main/java/com/willhawe/spendtracker/
+├── BankNotificationListener.java  # NotificationListenerService: parses payment alerts, tracks listener health
+├── BankNotificationStore.java     # Classifies notifications, writes accepted payments via PaymentDao
+├── AppDatabase.java / PaymentDao.java / PaymentEntity.java  # Room-backed durable payment queue
+├── NotificationHealthStore.java   # Listener connect/disconnect state + rejection diagnostics log
 ├── SpentTodayWidget.java           # Daily spend total widget
 ├── MonthlyCategoryWidget.java      # Monthly category breakdown widget (Canvas chart)
 ├── CategoryBreakdownStore.java     # Cache the React app syncs widget data into

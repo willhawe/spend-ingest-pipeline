@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'care.bramble.spending',
-  appName: 'Spending Tracker',
+  appId: 'com.willhawe.spendtracker',
+  appName: 'Spend Tracker',
   webDir: 'dist'
 };
 

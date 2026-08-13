@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.content.Context;
 import android.content.SharedPreferences;

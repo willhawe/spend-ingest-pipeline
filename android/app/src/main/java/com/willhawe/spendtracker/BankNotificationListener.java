@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.content.ComponentName;
 import android.service.notification.NotificationListenerService;

@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;

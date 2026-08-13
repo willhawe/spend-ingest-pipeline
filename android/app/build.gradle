@@ -16,10 +16,10 @@ def hasReleaseSigningConfig = releaseKeystorePath && releaseKeystorePassword && 
 def releaseVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
 
 android {
-    namespace = "care.bramble.spending"
+    namespace = "com.willhawe.spendtracker"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "care.bramble.spending"
+        applicationId "com.willhawe.spendtracker"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode releaseVersionCode

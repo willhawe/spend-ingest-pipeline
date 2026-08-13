@@ -41,6 +41,10 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
+      - name: Run Android unit tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest --no-daemon
+
       - name: Decode signing keystore
         working-directory: android/app
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > release.jks
@@ -62,6 +66,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: spending-tracker-release
+          name: spend-tracker-release
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30

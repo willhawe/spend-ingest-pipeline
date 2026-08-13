@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Spending Tracker</string>
-    <string name="title_activity_main">Spending Tracker</string>
-    <string name="package_name">care.bramble.spending</string>
-    <string name="custom_url_scheme">care.bramble.spending</string>
+    <string name="app_name">Spend Tracker</string>
+    <string name="title_activity_main">Spend Tracker</string>
+    <string name="package_name">com.willhawe.spendtracker</string>
+    <string name="custom_url_scheme">com.willhawe.spendtracker</string>
     <string name="widget_description">Shows your total spending today</string>
     <string name="widget_monthly_category_description">Shows this month\'s spending by category</string>
 </resources>

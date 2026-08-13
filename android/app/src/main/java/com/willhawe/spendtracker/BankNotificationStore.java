@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import android.app.Notification;
 import android.content.ComponentName;
@@ -98,7 +98,19 @@ public final class BankNotificationStore {
         entity.cardSource = cardSource;
         entity.deleted = false;
         entity.createdAt = now;
-        dao.insert(entity);
+
+        // insert() returns -1 when OnConflictStrategy.IGNORE silently dropped
+        // the row because its id (which incorporates a hash of the
+        // notification's own key) already exists -- e.g. if Android/Wallet
+        // ever reuses a notification key for a genuinely new purchase. That's
+        // an unproven edge case, not a confirmed one, so surface it in
+        // diagnostics as a duplicate rather than claiming "accepted" for a
+        // row that was actually a no-op.
+        long rowId = dao.insert(entity);
+        if (rowId == -1) {
+            NotificationHealthStore.recordOutcome(context, sbn.getPackageName(), NotificationHealthStore.OUTCOME_DUPLICATE, "id collision");
+            return;
+        }
 
         NotificationHealthStore.recordOutcome(context, sbn.getPackageName(), NotificationHealthStore.OUTCOME_ACCEPTED, merchant);
         SpentTodayWidget.updateAll(context);
@@ -131,10 +143,16 @@ public final class BankNotificationStore {
         return mostRecent == null ? "" : mostRecent.amount;
     }
 
+    // Only pending (unsynced) rows -- the sole consumer of this is the JS
+    // sync loop, which re-uploads (and re-marks-synced) whatever comes back.
+    // Returning every row here would keep resetting synced_at to "now" on
+    // every poll, so already-synced rows would never age past the retention
+    // window in markSynced()/purgeSyncedBefore(), and every row ever
+    // recorded would get re-uploaded to Supabase every two seconds forever.
     public static String getScannedPayments(Context context) {
-        List<PaymentEntity> all = AppDatabase.getInstance(context).paymentDao().getAll();
+        List<PaymentEntity> pending = AppDatabase.getInstance(context).paymentDao().getPending();
         JSONArray array = new JSONArray();
-        for (PaymentEntity entity : all) {
+        for (PaymentEntity entity : pending) {
             try {
                 array.put(new JSONObject()
                         .put("id", entity.id)
@@ -154,8 +172,12 @@ public final class BankNotificationStore {
         return array.toString();
     }
 
+    // Scoped to today only, matching what this has always claimed to do --
+    // clearAllTables() would also wipe older pending (unsynced) rows still
+    // waiting to reach Supabase, which is a different, much more destructive
+    // operation than "clear today's notification data".
     public static void clearToday(Context context) {
-        AppDatabase.getInstance(context).clearAllTables();
+        AppDatabase.getInstance(context).paymentDao().deleteForDate(todayKey());
         SpentTodayWidget.updateAll(context);
     }
 

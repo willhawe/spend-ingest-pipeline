@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;

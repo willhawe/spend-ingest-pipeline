@@ -14,7 +14,6 @@ export interface CategoryBreakdownPayload {
 }
 
 export interface WidgetBridgePlugin {
-  setSpentToday(options: { amount: string }): Promise<void>;
   setCategoryBreakdown(options: { categories: CategoryBreakdownPayload[] }): Promise<void>;
   openNotificationAccessSettings(): Promise<void>;
   getNotificationAccessStatus(): Promise<{ enabled: boolean }>;
@@ -84,15 +83,6 @@ export interface NativeDiagnostics {
   lastAcceptedAt?: string;
   pendingUploadCount: number;
   diagnostics: NotificationOutcome[];
-}
-
-export async function syncWidgetTotal(amount: string): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await WidgetBridge.setSpentToday({ amount });
-  } catch {
-    // widget sync is best-effort
-  }
 }
 
 export async function syncCategoryBreakdown(categories: CategoryBreakdownPayload[]): Promise<void> {

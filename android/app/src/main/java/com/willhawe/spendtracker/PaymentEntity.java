@@ -1,4 +1,4 @@
-package care.bramble.spending;
+package com.willhawe.spendtracker;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
